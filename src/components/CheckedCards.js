@@ -1,16 +1,100 @@
 /* eslint-disable prettier/prettier */
 
-import React from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   StyleSheet,
   View,
   Image,
   Text,
   ImageBackground,
+  FlatList,
 } from 'react-native';
 import {scale} from 'react-native-size-matters';
+import firestore from '@react-native-firebase/firestore';
 
 const CheckedCards = () => {
+  const [checkIns, setCheckIns] = useState([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Subscribe to real-time updates
+        const unsubscribe = firestore()
+          .collection('CheckInItems')
+          .onSnapshot(querySnapshot => {
+            const data = querySnapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data(),
+            }));
+            setCheckIns(data);
+          });
+
+        // Unsubscribe when the component is unmounted
+        return () => unsubscribe();
+      } catch (error) {
+        console.error('Error fetching check-ins:', error);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const formatDate = date => {
+    if (!date) {
+      return '';
+    }
+
+    const options = {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    };
+
+    const formattedDate = new Date(date.toDate()).toLocaleDateString(
+      undefined,
+      options,
+    );
+
+    const day = new Date(date.toDate()).getDate();
+    const daySuffix =
+      day === 1 || day === 21 || day === 31
+        ? 'st'
+        : day === 2 || day === 22
+        ? 'nd'
+        : day === 3 || day === 23
+        ? 'rd'
+        : 'th';
+
+    return formattedDate.replace(/\b\d+\b/, match => match + daySuffix);
+  };
+
+  const renderItem = ({item}) => (
+    <View style={styles.cardView}>
+      <View style={styles.imageView}>
+        <ImageBackground source={{uri: item.imageURL}} style={styles.itemImage}>
+          <View style={styles.touchable}>
+            <Text style={styles.checkinTxt}>Checked In</Text>
+          </View>
+        </ImageBackground>
+      </View>
+
+      <View style={styles.nameContainer}>
+        <Text style={styles.titleName}>{item.title}</Text>
+        <Text style={styles.dateTxt}>
+        {formatDate(item.createdAt)}
+        </Text>
+      </View>
+
+      <View style={styles.ownerContainer}>
+        <Image
+          source={require('../../assets/profile.png')}
+          style={styles.profile}
+        />
+        <Text style={styles.ownerTitle}>Owner: </Text>
+        <Text style={styles.ownerName}>John Doe</Text>
+      </View>
+    </View>
+  );
   return (
     <>
       <View style={styles.container}>
@@ -18,28 +102,15 @@ const CheckedCards = () => {
           <Text style={styles.title}>Added CheckIns</Text>
         </View>
 
-        <View style={styles.cardView}>
-          <View style={styles.imageView}>
-            <ImageBackground
-              source={require('../../assets/ParisHd.jpg')}
-              style={styles.itemImage}>
-              <View style={styles.touchable}>
-                <Text style={styles.checkinTxt}>Checked In</Text>
-              </View>
-            </ImageBackground>
-          </View>
-
-          <View style={styles.nameContainer}>
-            <Text style={styles.titleName}>CheckIn Name</Text>
-            <Text style={styles.dateTxt}>12th November, 2023</Text>
-          </View>
-
-          <View style={styles.ownerContainer}>
-            <Image source={require('../../assets/profile.png')} style={styles.profile}/>
-            <Text style={styles.ownerTitle}>Owner: </Text>
-            <Text style={styles.ownerName}>John Doe</Text>
-          </View>
-        </View>
+        {checkIns.length === 0 ? (
+          <Text style={styles.noItemText}>No items checked in</Text>
+        ) : (
+          <FlatList
+            data={checkIns}
+            renderItem={renderItem}
+            keyExtractor={item => item.id}
+          />
+        )}
       </View>
     </>
   );
@@ -69,7 +140,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: scale(15),
     shadowColor: '#000',
-    shadowOffset: { width: 2, height: 0 },
+    shadowOffset: {width: 2, height: 0},
     shadowOpacity: 0.5,
     shadowRadius: 4,
     elevation: 7,
@@ -144,6 +215,14 @@ const styles = StyleSheet.create({
     color: 'black',
     fontFamily: 'Roboto',
     fontWeight: '400',
+  },
+  noItemText: {
+    fontSize: scale(16),
+    color: 'black',
+    fontFamily: 'Roboto',
+    fontWeight: '400',
+    textAlign: 'center',
+    marginTop: scale(15),
   },
 });
 

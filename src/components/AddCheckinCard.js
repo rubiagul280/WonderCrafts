@@ -1,6 +1,6 @@
 /* eslint-disable prettier/prettier */
 
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   StyleSheet,
   View,
@@ -10,11 +10,147 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
+  Alert,
+  PermissionsAndroid,
 } from 'react-native';
 import {scale} from 'react-native-size-matters';
+import firestore from '@react-native-firebase/firestore';
+import storage from '@react-native-firebase/storage';
+import GalleryModal from './GalleryModal';
+import {launchImageLibrary, launchCamera} from 'react-native-image-picker';
 
 const AddCheckinCard = () => {
   const [openModal, setOpenModal] = useState(false);
+  const [title, setTitle] = useState('');
+  const [imageURL, setImageURL] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+
+  const requestCameraPermission = async () => {
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        {
+          title: 'Camera Permission',
+          message: 'This app needs access to your camera.',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        },
+      );
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('Camera permission granted');
+        imageFromCamera(setImageURL);
+        setModalVisible(false);
+      } else {
+        console.log('Camera permission denied');
+        setModalVisible(false);
+      }
+    } catch (err) {
+      console.warn(err);
+    }
+  };
+
+  const requestStoragePermission = async () => {
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+        {
+          title: 'Storage Permission',
+          message: 'This app needs access to your storage.',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        },
+      );
+
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('Storage permission granted');
+        imageFromGallery(setImageURL);
+        setModalVisible(false);
+      } else {
+        console.log('Storage permission denied');
+        setModalVisible(false);
+      }
+    } catch (err) {
+      console.warn(err);
+    }
+  };
+
+  const imageFromGallery = setImageURL => {
+    const options = {
+      maxWidth: 1000,
+      maxHeight: 1000,
+      storageOptions: {
+        skipBackup: true,
+        path: 'images',
+      },
+    };
+
+    launchImageLibrary(options, response => {
+      if (response.didCancel) {
+        console.log('User cancelled image picker');
+      } else if (response.error) {
+        console.log('ImagePicker Error: ', response.error);
+      } else if (response.customButton) {
+        console.log('User tapped custom button: ', response.customButton);
+      } else {
+        const source = response.assets[0].uri;
+        setImageURL(source);
+      }
+    });
+  };
+
+  //func to get imgae from camera
+  const imageFromCamera = setImageURL => {
+    const options = {
+      maxWidth: 1000,
+      maxHeight: 1000,
+      storageOptions: {
+        skipBackup: true,
+        path: 'images',
+      },
+    };
+
+    launchCamera(options, response => {
+      if (response.didCancel) {
+        console.log('User cancelled camera picker');
+      } else if (response.error) {
+        console.log('CameraPicker Error: ', response.error);
+      } else if (response.customButton) {
+        console.log('User tapped custom button: ', response.customButton);
+      } else {
+        const source = response.assets[0].uri;
+        setImageURL(source);
+      }
+    });
+  };
+
+  const handleAddCheckIn = async () => {
+    if (!title || !imageURL) {
+      Alert.alert('Error', 'Please enter a title and upload an image.');
+      return;
+    }
+
+    try {
+      const checkInId = firestore().collection('CheckInItems').doc().id;
+
+      await firestore().collection('CheckInItems').doc(checkInId).set({
+        title: title,
+        imageURL: imageURL,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      });
+      Alert.alert('Successfully CheckedIn');
+      setOpenModal(false);
+      setImageURL('');
+      setTitle('');
+      const imageRef = storage().ref(`checkin_images/${checkInId}`);
+      await imageRef.putFile(imageURL);
+    } catch (error) {
+      console.error('Error adding check-in:', error);
+      Alert.alert('Error', 'An error occurred while adding the check-in.');
+    }
+  };
+
   return (
     <>
       <View style={styles.container}>
@@ -57,7 +193,11 @@ const AddCheckinCard = () => {
             <View style={styles.modalContent}>
               <View style={styles.topView}>
                 <Text style={styles.title}>Add Check In</Text>
-                <TouchableOpacity onPress={() => setOpenModal(false)}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setOpenModal(false);
+                    setImageURL('');
+                  }}>
                   <Image
                     source={require('../../assets/CROSS.png')}
                     style={[styles.crossImage, {tintColor: 'black'}]}
@@ -72,40 +212,66 @@ const AddCheckinCard = () => {
                     style={styles.textInputStyle}
                     placeholder="Enter title"
                     placeholderTextColor={'#D9D9D9'}
+                    value={title}
+                    onChangeText={txt => setTitle(txt)}
+                    caretHidden={title ? false : true}
                   />
                 </View>
 
                 <View style={styles.uploadImageView}>
                   <Text style={styles.titleTxt}>Upload Image</Text>
                   <View style={styles.dottedBorder}>
-                    <TouchableOpacity>
+                    {imageURL ? (
                       <Image
-                        source={require('../../assets/Vector.png')}
-                        style={styles.vectorImage}
+                        source={{uri: imageURL}}
+                        style={styles.uploadedImage}
                       />
-                    </TouchableOpacity>
-                    <Text style={styles.clickTxt}>
-                      Click or drag file to this area to upload
-                    </Text>
-                    <Text style={styles.txt}>
-                      Support for a Single or bulk upload. Strictly prohibit
-                      from uploading company data or other band files
-                    </Text>
+                    ) : (
+                      <>
+                        <TouchableOpacity onPress={() => setModalVisible(true)}>
+                          <Image
+                            source={require('../../assets/Vector.png')}
+                            style={styles.vectorImage}
+                          />
+                        </TouchableOpacity>
+                        <Text style={styles.clickTxt}>
+                          Click or drag file to this area to upload
+                        </Text>
+                        <Text style={styles.txt}>
+                          Support for a Single or bulk upload. Strictly prohibit
+                          from uploading company data or other band files
+                        </Text>
+                      </>
+                    )}
                   </View>
                 </View>
 
                 <View style={styles.line} />
                 <View style={styles.bottomView}>
-                  <TouchableOpacity style={styles.cancelTouch} onPress={() => setOpenModal(false)}>
+                  <TouchableOpacity
+                    style={styles.cancelTouch}
+                    onPress={() => {
+                      setOpenModal(false);
+                      setImageURL('');
+                    }}>
                     <Text style={styles.cancel}>Cancel</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={styles.addTouch}>
+                  <TouchableOpacity
+                    style={styles.addTouch}
+                    onPress={handleAddCheckIn}>
                     <Text style={styles.add}>Add</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             </View>
+
+            <GalleryModal
+              modalVisible={modalVisible}
+              setModalVisible={setModalVisible}
+              requestCameraPermission={requestCameraPermission}
+              requestStoragePermission={requestStoragePermission}
+            />
           </View>
         </Modal>
       </View>
@@ -278,6 +444,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto Flex',
     fontWeight: '400',
     marginTop: scale(25),
+    textAlign: 'center',
   },
   txt: {
     fontSize: scale(14),
@@ -334,6 +501,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto Flex',
     fontWeight: '400',
     textAlign: 'center',
+  },
+  uploadedImage: {
+    width: scale(294),
+    height: scale(187),
+    //marginTop: scale(15),
+    borderRadius: scale(5),
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignContent: 'center',
   },
 });
 
